@@ -52,6 +52,16 @@ db$diff <- with(db, EVA_FIM - EVA_INICIO)
 ######@> melhora...
 db$diag <- ifelse(db$diff < 0, 1, 0)
 
+######@> Criando uma segunda base contendo os dados de antes e depois
+######@> empilhados...
+tmp01 <- select(db, NOME:EVA_INICIO)
+tmp02 <- select(db, NOME:FREQUÊNCIA, EVA_FIM)
+names(tmp01) <- c("nome", "sexo", "idade", "freq", "escore")
+names(tmp02) <- c("nome", "sexo", "idade", "freq", "escore")
+tmp01$trat <- "Antes"
+tmp02$trat <- "Depois"
+db2 <- gtools::smartbind(as.data.frame(tmp01), as.data.frame(tmp02))
+
 ########################################################################
 ######@> Análise exploratória da base...
 
@@ -63,14 +73,95 @@ create_report(data = db, output_dir = "figs",
 ########################################################################
 ######@> Modelo de Comparação entre Inicío e Fim do tratamento...
 
+######@>----------------------=== Modelo Binomial para diagnóstico final
+
 ######@> Modelo para a presença-ausência de melhora...
 mod0 <- glm(diag ~ (SEXO * IDADE * FREQUÊNCIA), data = db,
             family = "binomial", na.action = "na.fail")
 
-#####@> Comparando os modelos finais...
+#####@> Selecionando variáveis...
 mod.all <- dredge(mod0, extra = c("R^2", "deviance"))
 
+######@>---------------=== Modelo Poisson para comparação antes e depois
 
+######@> Modelo full...
+mod0 <- glm(escore ~ sexo * idade * trat, data = db2,
+            offset = log(freq), family = "poisson",
+            na.action = "na.fail")
+
+######@> Selecionando variáveis...
+mod.all <- dredge(mod0, extra = c("R^2", "deviance"))
+write.table(mod.all, "tabs/Model_choice.csv", row.names = FALSE,
+            sep = ";", dec = ",")
+
+######@> Modelo final...
+mod.final <- glm(escore ~ idade + trat,  data = db2,
+                 offset = log(freq), family = "poisson")
+
+#####@> ANOVA do modelo...
+anova(mod.final, test = "Chisq")
+
+#####@> Resumo geral dos parâmetros do modelo final...
+summary(mod.final)
+
+#####@> Diagnóstico do modelo final...
+res <- fortify(mod.final)
+res$ID <- 1:nrow(res)
+
+p00 <- ggplot(data = res, aes(x = .resid)) +
+    geom_histogram(aes(y = ..count..), binwidth = 0.5,
+                   fill = "white", colour = "black",
+                   boundary = 0.5) +
+    scale_x_continuous(limits = c(-3.5, 3.5),
+                       breaks = seq(-3.5, 3.5, 0.5),
+                       expand = c(0, 0)) +
+    scale_y_continuous(limits = c(0, 50), expand = c(0, 0)) +
+    labs(x = "Resíduos", y = "Frequência") +
+    theme_gray(base_size = 16)
+p00
+
+p01 <- ggplot(data = res, aes(x = ID, y = .resid)) +
+    geom_point(pch = 21, colour = "black", fill = "white", size = 4) +
+    geom_hline(yintercept = 0, colour = "red") +
+    scale_y_continuous(limits = c(-3.5, 3.5),
+                       breaks = seq(-3.5, 3.5, 1),
+                       expand = c(0, 0)) +
+    scale_x_continuous(limits = c(0, 270), expand = c(0, 0)) +
+    labs(x = "Amostra", y = "Resíduos") +
+    theme_gray(base_size = 16)
+p01
+
+png("figs/residuos_modelo_poisson_ver00.png", res = 200, units = "cm",
+    w = 30, h = 15)
+p00 | p01
+dev.off()
+
+######@> Comparando os resultados...
+out <- data.frame(expand.grid(idade = seq(40, 60, 1), freq = 12,
+                              trat = c("Antes", "Depois")))
+out$pred <- predict(mod.final, out, type = "response")
+out$se <- predict(mod.final, out, type = "response", se.fit = TRUE)$se.fit
+out$ic <- 1.96 * out$se
+
+p02 <- ggplot() +
+    geom_line(data = out, aes(x = idade, y = pred - ic, colour = trat),
+              linetype = "dashed", lwd = 1) +
+    geom_line(data = out, aes(x = idade, y = pred + ic, colour = trat),
+              linetype = "dashed", lwd = 1) +
+    geom_line(data = out, aes(x = idade, y = pred, colour = trat),
+              linetype = "solid", lwd = 1) +
+    scale_colour_manual("Tratamento",
+                        values = c("#C77CFF", "#00BFC4")) +
+    scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 2),
+                       expand = c(0, 0)) +
+    labs(x = "Idade", "Escala de dor") +
+    theme_gray(base_size = 16)
+p02
+
+png("figs/comparacao_resultados_ver00.png", res = 200, units = "cm",
+    w = 30, h = 15)
+p02
+dev.off()
 
 ########################################################################
 ##
