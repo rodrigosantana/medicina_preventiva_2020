@@ -28,6 +28,7 @@ library(explor)
 library(readxl)
 library(DataExplorer)
 library(MuMIn)
+library(ggcorrplot)
 
 ########################################################################
 ######@> Carregando base de dados...
@@ -162,6 +163,12 @@ png("figs/comparacao_resultados_ver00.png", res = 200, units = "cm",
     w = 30, h = 15)
 p02
 dev.off()
+
+########################################################################
+######@> Correlação Múltipla...
+
+######@> Visualizando os dados...
+
 
 ########################################################################
 ##
